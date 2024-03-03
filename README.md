@@ -10,6 +10,7 @@ To get started with this project, first clone the repository to your local machi
 `git clone https://github.com/sunnysjys/NextFramePred4Pong.git`
 
 `cd NextFrmaePred4Pong`
+
 After cloning the repository, you need to set up the project environment. We use Conda for environment management to ensure consistency across different setups.
 
 1. Create the Environment: 
