@@ -8,6 +8,7 @@ This repository hosts the code for PSYCH209 project that combines NaViT (a varia
 To get started with this project, first clone the repository to your local machine:
 
 `git clone https://github.com/sunnysjys/NextFramePred4Pong.git`
+
 `cd NextFrmaePred4Pong`
 After cloning the repository, you need to set up the project environment. We use Conda for environment management to ensure consistency across different setups.
 
@@ -15,6 +16,7 @@ After cloning the repository, you need to set up the project environment. We use
 To create the Conda environment with all the necessary dependencies, run:
 
 `conda env create -f environment.yml`
+
 This command creates a new Conda environment named psych209 based on the specifications in the environment.yml file.
 
 2. Activate the Environment: Before working on the project or running any scripts, activate the environment using:
@@ -24,4 +26,5 @@ This command creates a new Conda environment named psych209 based on the specifi
 3. Updating the Environment: If there are updates to the dependencies or if you're pulling changes that include an updated environment.yml, you can update the environment using:
 
 `conda env update --file environment.yml --prune`
+
 The --prune option ensures that any dependencies removed from environment.yml since your last update are also removed from the environment.
