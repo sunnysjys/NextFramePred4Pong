@@ -6,56 +6,63 @@ import torch
 
 
 class PongDataset(Dataset):
-    def __init__(self, directory_path):
+    def __init__(self, directory_path, pixel_size, N_predictions=1):
         self.data = []
+        self.pixel_size = pixel_size
+        self.N_predictions = N_predictions
         # List all .npy files in the directory and load them
-        for file_name in os.listdir(directory_path):
-            if file_name.endswith('.npy'):
-                file_path = os.path.join(directory_path, file_name)
-                # Load the data from the file
-                cur_data = np.load(file_path)
-                # Ensure data shape matches expectations
-                if cur_data.shape == (128, 128, 1):
-                    self.data.append(cur_data)
+
+        file_names = os.listdir(directory_path)
+        file_names = sorted([f for f in file_names if f.endswith('.npy')])
+        print("file_names:", file_names)
+        for file_name in file_names:
+            file_path = os.path.join(directory_path, file_name)
+            # Load the data from the file
+            cur_data = np.load(file_path)
+            # Ensure data shape matches expectations
+            if cur_data.shape == (self.pixel_size, self.pixel_size, 1):
+                self.data.append(cur_data)
 
         # Stack the loaded data along a new axis to maintain individual frames
         self.data = np.stack(self.data, axis=0)
         self.transform = transforms.ToTensor()
 
     def __len__(self):
-        # With each sequence being 3 frames long, the number of sequences is `number of frames - 2`
-        return len(self.data) - 2
+        # With each sequence being 2 + N.predictions frames long, the number of sequences is `number of frames - 2`
+        return len(self.data) - 2 - (self.N_predictions - 1)
 
     def __getitem__(self, idx):
         # Select frames t0, t1, and t2
-        sequence = self.data[idx:idx+3]  # Get the sequence of interest
+        # Get the sequence of interest
+        sequence = self.data[idx:idx+2+self.N_predictions]
 
         # Pre-allocate a tensor array for the sequence
-        input_frames = torch.zeros((2, 1, 128, 128), dtype=torch.float)
-        target_frame = torch.zeros((1, 128, 128), dtype=torch.float)
-
+        input_frames = torch.zeros(
+            (2, 1, self.pixel_size, self.pixel_size), dtype=torch.float)
+        target_frame = torch.zeros(
+            (self.N_predictions, 1, self.pixel_size, self.pixel_size), dtype=torch.float)
         # Transform each frame in the sequence and assign
         for i, frame in enumerate(sequence):
             transformed_frame = self.transform(frame)
             if i < 2:  # t0, t1
                 input_frames[i] = transformed_frame
-            else:  # t2
-                target_frame = transformed_frame
+            else:  # t2, t3...
+                target_frame[i-2] = transformed_frame
 
         return input_frames, target_frame
 
 
 # Assuming 'directory_path' is the path to your directory containing the .npy files
-directory_path = './frames/test_3/'
-dataset = PongDataset(directory_path)
+# directory_path = './frames/test_3/'
+# dataset = PongDataset(directory_path, 32, N_predictions=1)
 
-# TODO: SHUFFLING COULD BE TRUE, THIS IS A DESIGN CHOICE
-dataloader = DataLoader(dataset, batch_size=8, shuffle=False)
+# # TODO: SHUFFLING COULD BE TRUE, THIS IS A DESIGN CHOICE
+# dataloader = DataLoader(dataset, batch_size=8, shuffle=False)
 
-print("Number of batches:", len(dataloader))
-print("Number of samples in the dataset:", len(dataset))
-print("shape of first batch including both input frames and target frame:",
-      next(iter(dataloader))[0].shape, next(iter(dataloader))[1].shape)
+# print("Number of batches:", len(dataloader))
+# print("Number of samples in the dataset:", len(dataset))
+# print("shape of first batch including both input frames and target frame:",
+#       next(iter(dataloader))[0].shape, next(iter(dataloader))[1].shape)
 
 # Example usage of the dataloader
 # for i, (input_frames, target_frame) in enumerate(dataloader):
