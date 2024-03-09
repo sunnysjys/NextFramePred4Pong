@@ -40,9 +40,10 @@ class CLSTokenPredictor(nn.Module):
 
         # Define the first dense layer
         self.dense1 = nn.Linear(input_dim, hidden_dim)
-
+        self.bn1 = nn.BatchNorm1d(hidden_dim)
         # Define the second dense layer which outputs the prediction for all N frames together
         self.dense2 = nn.Linear(hidden_dim, output_dim)
+        self.bn2 = nn.BatchNorm1d(output_dim)
 
         # Optional: Define an activation function, such as ReLU, to introduce non-linearity
         self.relu = nn.ReLU()
@@ -60,11 +61,16 @@ class CLSTokenPredictor(nn.Module):
         - torch.Tensor: Predicted feature vectors with shape [batch_size, N_predictions, 1024].
         """
         # Pass the CLS token through the first dense layer and apply ReLU
-        hidden = self.relu(self.dense1(cls_token))
-
+        hidden = self.relu(self.bn1(self.dense1(cls_token)))
+        # torch.set_printoptions(threshold=np.inf)
+        # print("hidden without batch normalization",
+        #       self.relu(self.dense1(cls_token)))
+        # print("hidden with batch normalization", hidden)
         # Pass the result through the second dense layer to get the final prediction
-        prediction_flat = self.sigmoid(self.dense2(hidden))
-
+        prediction_flat = self.sigmoid(self.bn2(self.dense2(hidden)))
+        # print("prediction_flat without batch normalization",
+        #       self.sigmoid(self.dense2(hidden)))
+        # print("prediction_flat with batch normalization", prediction_flat)
         # Reshape the flat prediction to separate predictions for each future frame
         prediction = prediction_flat.reshape(-1,
                                              self.N_predictions, self.per_prediction_dim)
@@ -118,12 +124,12 @@ class NaViT_modified(nn.Module):
             N_predictions=N_predictions  # Number of future frames i want to predict
         )
         # Diffusion parameters
-        self.num_transformer_blocks_diffusion = 8
+        self.num_transformer_blocks_diffusion = 6
 
     def forward(self, input_images):
         # images dimension: (batch_size, 2, 1, 32, 32)
         cls_token = self.navit_backbone(input_images)  # (batch_size*2, 1024)
-        # print("cls token", cls_token)
+        # print("cls token", cls_token.shape)
         # (TODO) change the dim back to [:, 0, :], assuming batch is the first dim
         # Assuming the CLS token is the first token in the output
 
@@ -131,18 +137,20 @@ class NaViT_modified(nn.Module):
         # (batch_size, num_predictions, 1024)
         # print("cls token shape", cls_token.shape)
         # mulitplying by 2 because that's what the number of input images are
+        # print("input_images", input_images.shape)
         cls_token = cls_token.reshape(-1, 2*self.length_of_embedding)
-        # print("cls token shape", cls_token.shape)
+        # print("cls token shape", cls_token)
         next_frame_pred = self.next_frame_predictor(cls_token)
-        # print("next_frame_pred", next_frame_pred.shape)
+
+        # print("next_frame_pred", next_frame_pred)
         return next_frame_pred
 
 
-if __name__ == "__main__":
-    # Example usage
-    images = [torch.randn(3, 256, 256), torch.randn(
-        3, 128, 128)]  # Example input images
-    noise = torch.randn(1, 256*256*3)  # Example noise vector
-    model = NaViT_modified()
-    next_frame_pred = model(images, noise)
-    print(next_frame_pred.shape)  # Expected shape of the next frame prediction
+# if __name__ == "__main__":
+    # # Example usage
+    # images = [torch.randn(3, 256, 256), torch.randn(
+    #     3, 128, 128)]  # Example input images
+    # noise = torch.randn(1, 256*256*3)  # Example noise vector
+    # model = NaViT_modified()
+    # next_frame_pred = model(images, noise)
+    # print(next_frame_pred.shape)  # Expected shape of the next frame prediction

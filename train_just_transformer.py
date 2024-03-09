@@ -127,11 +127,11 @@ def main():
             # assert inputs.size() == (, 2, 1, image_size, image_size)
             # assert targets.size() == (batch_size, N_predictions, 1, image_size, image_size)
             # (batch, num_predictions, 1024)
-            inputs = inputs / 255.0
-            targets = targets / 255.0
+            # inputs in shape (3,2,1,32,32)
+            inputs = inputs
+            targets = targets
 
             prediction = model(inputs.to(device))
-
             # assert prediction.size() == (batch_size, 1, image_size**2)
             targets_flattened = targets.reshape(-1,
                                                 N_predictions, image_size**2).to(device)
@@ -154,9 +154,9 @@ def main():
         log_to_file(f'{model_save_path}training_log.txt',
                     f"{datetime.now()}: Epoch {epoch}, Loss: {avg_loss}, Time taken for Current Epoch: {epoch_duration} seconds")
 
-        inputs = (inputs * 255).detach().type(torch.uint8)
-        prediction = (prediction * 255).detach().type(torch.uint8)
-        targets = (targets * 255).detach().type(torch.uint8)
+        inputs = (inputs).detach().type(torch.uint8)
+        prediction = (prediction).detach().type(torch.uint8)
+        targets = (targets).detach().type(torch.uint8)
 
         save_prediction_examples(model_save_path, epoch, inputs.cpu(
         ), prediction.cpu(), targets.cpu(), image_size, N_predictions)

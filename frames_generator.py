@@ -7,6 +7,7 @@ import pygame
 import numpy as np
 import os
 import time
+import random
 
 # Initialize Pygame
 pygame.init()
@@ -102,6 +103,46 @@ while game_running:
     #     print(board[0][i])
     # Convert the RGB array to a binary array
 
+    def generate_unexpected_frame(board, window_width, window_height, paddle_1_x, paddle_1_y, paddle_2_x, paddle_2_y, ball_x, ball_y, ball_radius):
+        global ball_speed_x, ball_speed_y
+        unexpected_board = np.copy(board)
+        # Generate an unexpected frame based on a random scenario
+        scenario = random.randint(1, 4)
+
+        if scenario == 1:
+            # Ball passes through the paddle
+            if ball_x <= paddle_1_x + paddle_width:
+                ball_x = paddle_1_x + paddle_width + ball_radius + random.randint(5, 10)
+            elif ball_x >= paddle_2_x - ball_radius:
+                ball_x = paddle_2_x - ball_radius - random.randint(5, 10)
+
+        elif scenario == 2:
+            # Ball passes through the wall
+            if ball_y <= ball_radius:
+                ball_y = ball_radius + random.randint(5, 10)
+            elif ball_y >= window_height - ball_radius:
+                ball_y = window_height - ball_radius - random.randint(5, 10)
+
+        elif scenario == 3:
+            # Ball bounces in a different direction
+            ball_speed_x = (ball_speed_x * -1) + random.randint(-3, 3)
+            ball_speed_y = (ball_speed_y * -1) + random.randint(-3, 3)
+
+        elif scenario == 4:
+            # Ball wiggles around instead of going in a straight path
+            ball_x += random.randint(-5, 5)  # Increased range for more deviation
+            ball_y += random.randint(-5, 5)  # Increased range for more deviation
+
+        # Update the unexpected board with the new ball position
+        for y in range(window_height):
+            for x in range(window_width):
+                if (x - ball_x) ** 2 + (y - ball_y) ** 2 <= ball_radius ** 2:
+                    unexpected_board[y, x, 0] = 1
+                else:
+                    unexpected_board[y, x, 0] = 0
+
+        return unexpected_board
+
     # Save the frame as a .npy file
     frame_count += 1
     if frame_count % 2 == 0:  # Saving every 2th frame, so roughly every 1/15 seconds
@@ -109,6 +150,11 @@ while game_running:
         frame_path = os.path.join(
             training_data_path, f"frame_{saved_frame_count:06d}.npy")
         np.save(frame_path, board)
+
+        # Generate an unexpected frame that violates physical laws
+        unexpected_frame = generate_unexpected_frame(board, window_width, window_height, paddle_1_x, paddle_1_y, paddle_2_x, paddle_2_y, ball_x, ball_y, ball_radius)
+        unexpected_frame_path = os.path.join(training_data_path, f"unexpected_frame_{saved_frame_count:06d}.npy")
+        np.save(unexpected_frame_path, unexpected_frame)
 
     if saved_frame_count == 100:
         game_running = False
