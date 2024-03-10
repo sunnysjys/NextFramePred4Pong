@@ -13,7 +13,7 @@ import os
 from tqdm import tqdm
 import argparse
 from torch.cuda.amp import GradScaler, autocast
-
+import wandb
 
 def seed_all(seed=42):
     random.seed(seed)
@@ -79,15 +79,18 @@ def save_prediction_examples(model_save_path, epoch, example_number, inputs, pre
 
 def main(args_mode='train'):
     # For PyTorch 1.12 or newer with Metal Performance Shaders (MPS) support
-    device = torch.device(
-        "mps" if torch.backends.mps.is_available() else "cpu")
-    model_save_path = './results/test_11/'
+    use_mps = torch.backends.mps.is_available()
+    use_amp = torch.cuda.is_available()
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if use_mps else "cpu")
+
+    model_save_path = './results/test_7/'
     os.makedirs(model_save_path, exist_ok=True)  # Ensure the directory exists
-    training_data_path = './frames/test_11/'
+    training_data_path = './frames/test_7/'
     image_size = 32
     batch_size = 8
     N_input_frames = 4
     N_predictions = 4
+    lr = 1e-4
     seed = 42
     seed_all(seed)  # Make sure you have a function to set the seed
     log_to_file(f'{model_save_path}training_log.txt',
@@ -99,13 +102,12 @@ def main(args_mode='train'):
                             shuffle=False, num_workers=4)
 
     model = ViViT_modified(N_predictions=N_predictions).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0)
     loss_fn = torch.nn.BCELoss()
 
     start_epoch = 0
-    use_mps = torch.backends.mps.is_available()
-    use_amp = torch.cuda.is_available()
-    device = torch.device("cuda" if use_amp else "mps" if use_mps else "cpu")
+    n_epochs = 200
+
 
     # Resume from the last checkpoint if exists
     checkpoint_path = f'{model_save_path}latest_checkpoint.pth'
@@ -126,11 +128,25 @@ def main(args_mode='train'):
     #     log_to_file(f'{model_save_path}training_log.txt',
     #                 f"Test loss: {test_loss:.4f}")
     #     return
+        
     print("Training the model...")
     print("USE AMP", use_amp)
+    
+    wandb.init(project='ViViTPong_test', 
+               entity='psych209',
+               name='test_run',
+               config={
+                "learning_rate": lr,
+                "epochs": n_epochs,
+                "batch_size": batch_size,
+                "image_size": image_size,
+                "N_input_frames": N_input_frames,
+                "N_predictions": N_predictions,
+            })
+
 
     try:
-        for epoch in range(start_epoch, 200):
+        for epoch in range(start_epoch, n_epochs):
             total_loss = 0.0
             epoch_start = datetime.now()
 
@@ -181,12 +197,19 @@ def main(args_mode='train'):
             save_prediction_examples(model_save_path, epoch, 'last_one', inputs.cpu(
             ), prediction.cpu(), targets.cpu(), image_size, N_predictions, N_input_frames=N_input_frames)
 
+            wandb.log({"avg_loss": avg_loss, "epoch": epoch})
+
             if epoch % 2 == 0:
                 # Save model and optimizer state
                 torch.save({'epoch': epoch, 'model_state_dict': model.state_dict(
                 ), 'optimizer_state_dict': optimizer.state_dict()}, checkpoint_path)
                 log_to_file(f'{model_save_path}training_log.txt',
                             f"Saved checkpoint at epoch {epoch}")
+                
+                # log to wandb
+                artifact = wandb.Artifact('model-checkpoints', type='model')
+                artifact.add_file(checkpoint_path)
+                wandb.log_artifact(artifact)
 
         log_to_file(f'{model_save_path}training_log.txt',
                     "Training completed.")

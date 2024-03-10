@@ -25,7 +25,7 @@ def evaluate_model(model, dataloader, device, loss_fn, image_size, N_predictions
     losses = []
     with torch.no_grad():
         for inputs, targets in tqdm(dataloader, desc="Evaluating"):
-            inputs, targets = inputs.to(device) / 255.0, targets.to(device) / 255.0
+            inputs, targets = inputs.to(device), targets.to(device)
             predictions = model(inputs)
             targets_flattened = targets.reshape(-1, N_predictions, image_size**2)
             loss = loss_fn(predictions, targets_flattened)
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     model = load_model(model_path, device, N_predictions)
     loss_fn = torch.nn.BCEWithLogitsLoss()
 
-    # evaluate_model(model, dataloader, device, loss_fn, image_size, N_predictions)
+    evaluate_model(model, dataloader, device, loss_fn, image_size, N_predictions)
 
     # Evaluate scenarios
-    load_scenario(dataset, test_scenarios_path, device)
+    # load_scenario(dataset, test_scenarios_path, device)

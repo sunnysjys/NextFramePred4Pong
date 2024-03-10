@@ -1,6 +1,6 @@
 import torch
-from vit_pytorch.na_vit import NaViT
-from vit_pytorch.vivit import ViT
+# from vit_pytorch.na_vit import NaViT
+from vivit import ViT
 from torch import nn
 
 # Define the NaViT model as the backbone
@@ -133,8 +133,6 @@ class NaViT_modified(nn.Module):
     def forward(self, input_images):
         # images dimension: (batch_size, 2, 1, 32, 32)
         cls_token = self.navit_backbone(input_images)  # (batch_size*2, 1024)
-        # print("cls token", cls_token.shape)
-        # (TODO) change the dim back to [:, 0, :], assuming batch is the first dim
         # Assuming the CLS token is the first token in the output
 
         # Predict the next frame
@@ -203,14 +201,11 @@ class ViViT_modified(nn.Module):
         # images dimension: (batch_size, 1, N_input_frames, 32, 32)
         # print("input_images", input_images.shape)
         cls_token = self.vivit_backbone(input_images)  # (batch_size*2, 1024)
-
         # print("cls token", cls_token.shape)
-        # (TODO) change the dim back to [:, 0, :], assuming batch is the first dim
         # Assuming the CLS token is the first token in the output
 
         next_frame_pred = self.next_frame_predictor(cls_token)
 
-        # print("next_frame_pred", next_frame_pred)
         return next_frame_pred
 
 # if __name__ == "__main__":
