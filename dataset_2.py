@@ -6,11 +6,13 @@ import torch
 
 
 class PongDataset(Dataset):
-    def __init__(self, directory_path, pixel_size, N_predictions=1, mode='train', scenario_path=None):
+    def __init__(self, directory_path, pixel_size, N_predictions=1, N_input_frames=2, channel_first=False, mode='train', scenario_path=None):
         self.mode = mode
         self.data = []
         self.pixel_size = pixel_size
         self.N_predictions = N_predictions
+        self.N_input_frames = N_input_frames
+        self.channel_first = channel_first
         self.transform = transforms.ToTensor()
         # List all .npy files in the directory and load them
         if self.mode == 'train' or self.mode == 'test':
@@ -83,12 +85,58 @@ class PongDataset(Dataset):
             file_path = os.path.join(directory_path, file_name)
             # Load the data from the file
             cur_data = np.load(file_path)
+
+            # Check if value is between 0 and 1
+            if np.max(cur_data) > 1:
+                cur_data = cur_data / 255
+
             # Ensure data shape matches expectations
             if cur_data.shape == (self.pixel_size, self.pixel_size, 1):
                 self.data.append(cur_data)
 
         # Stack the loaded data along a new axis to maintain individual frames
         self.data = np.stack(self.data, axis=0)
+        self.transform = transforms.ToTensor()
+
+    def __len__(self):
+        # With each sequence being 2 + N.predictions frames long, the number of sequences is `number of frames - 2`
+        return len(self.data) - self.N_input_frames - (self.N_predictions - 1)
+
+    def __getitem__(self, idx):
+        # Select frames t0, t1, and t2
+        # Get the sequence of interest
+        sequence = self.data[idx:idx+self.N_input_frames+self.N_predictions]
+
+        # Pre-allocate a tensor array for the sequence
+        if self.channel_first:
+            input_frames = torch.zeros(
+                1, self.N_input_frames, self.pixel_size, self.pixel_size, dtype=torch.float)
+            target_frame = torch.zeros(
+                1, self.N_predictions, self.pixel_size, self.pixel_size, dtype=torch.float)
+
+            for i, frame in enumerate(sequence):
+                transformed_frame = self.transform(frame)
+                if i < self.N_input_frames:  # t0, t1
+                    input_frames[0, i] = transformed_frame[0]
+                else:  # t2, t3...
+                    target_frame[0, i -
+                                 self.N_input_frames] = transformed_frame[0]
+        else:
+            input_frames = torch.zeros(
+                (self.N_input_frames, 1, self.pixel_size, self.pixel_size), dtype=torch.float)
+            target_frame = torch.zeros(
+                (self.N_predictions, 1, self.pixel_size, self.pixel_size), dtype=torch.float)
+
+            for i, frame in enumerate(sequence):
+                transformed_frame = self.transform(frame)
+                if i < self.N_input_frames:  # t0, t1
+                    input_frames[i] = transformed_frame
+                else:  # t2, t3...
+                    target_frame[i-self.N_input_frames] = transformed_frame
+        # Transform each frame in the sequence and assign
+
+        return input_frames, target_frame
+
     
     def load_scenario(self, scenario_path):
         scenario_data = []
