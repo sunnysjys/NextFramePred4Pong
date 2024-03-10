@@ -83,9 +83,10 @@ def main(args_mode='train'):
     use_amp = torch.cuda.is_available()
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if use_mps else "cpu")
 
-    model_save_path = './results/test_7/'
+    model_save_path = './results/test_14/'
     os.makedirs(model_save_path, exist_ok=True)  # Ensure the directory exists
-    training_data_path = './frames/test_7/'
+    training_circle_path = './frames/test_7/'
+    training_square_path = './frames/test_14_square'
     image_size = 32
     batch_size = 8
     N_input_frames = 4
@@ -99,7 +100,7 @@ def main(args_mode='train'):
     dataset = PongDataset(training_data_path, image_size, N_predictions=N_predictions,
                           N_input_frames=N_input_frames, channel_first=True)
     dataloader = DataLoader(dataset, batch_size=batch_size,
-                            shuffle=False, num_workers=4)
+                            shuffle=True, num_workers=4)
 
     model = ViViT_modified(N_predictions=N_predictions).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0)
