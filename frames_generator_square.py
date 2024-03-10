@@ -180,7 +180,7 @@ while game_running:
         # unexpected_frame_path = os.path.join(training_data_path, f"unexpected_frame_{saved_frame_count:06d}.npy")
         # np.save(unexpected_frame_path, unexpected_frame)
 
-    if saved_frame_count == 2500:
+    if saved_frame_count == 1000:
         game_running = False
 
     # print("board", board.shape, board)
