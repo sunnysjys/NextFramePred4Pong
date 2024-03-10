@@ -1,104 +1,131 @@
-"""
-Writes frames of a 32x32 board pong to directory "training_frames".
-Each state of the board is saved in a single .npy file, while the states are 
-represented in 32x32 arrays of 0s and 1s. 
-"""
 import pygame
-import numpy as np
+import random
 import os
-import time
+import numpy as np
 import random
 
 # Initialize Pygame
 pygame.init()
 
-# Set up the game window
-window_width = 32
-window_height = 32
+# Set up the game window dimensions
+scale_factor = 20  # Factor to scale the game up for display
+game_width = 32
+game_height = 32
+window_width = game_width * scale_factor
+window_height = game_height * scale_factor
 window = pygame.display.set_mode((window_width, window_height))
-pygame.display.set_caption("Pong")
+pygame.display.set_caption("Scaled Up Pong")
+
+# Create a small surface for the game's logic
+game_surface = pygame.Surface((game_width, game_height))
 
 # Define game colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
-# Define game objects
+# Initialize game variables
 paddle_width = 2
 paddle_height = 8
 paddle_speed = 1
-ball_radius = 5
-ball_speed_x = 1
-ball_speed_y = 1
+ball_radius = 5  # Smaller to fit the 32x32 logic
+ball_speed_x = random.choice([-0.5, 0.5])
+ball_speed_y = random.choice([-0.5, 0.5])
 
 # Initialize game objects
-paddle_1_x = 1
-paddle_1_y = (window_height - paddle_height) // 2
-paddle_2_x = window_width - 2
-paddle_2_y = (window_height - paddle_height) // 2
-ball_x = window_width // 2
-ball_y = window_height // 2
+paddle_1_x = 1  # Starting at one edge for player 1
+paddle_1_y = (game_height - paddle_height) // 2
+# Starting at the opposite edge for player 2
+paddle_2_x = game_width - paddle_width - 1
+paddle_2_y = (game_height - paddle_height) // 2
+ball_x = game_width // 2
+ball_y = game_height // 2
 
-# Game loop flag
+# Game loop setup
 game_running = True
-
-# Create the directory for saving frames
-training_data_path = './frames/test_7/'
-
-if not os.path.exists(training_data_path):
-    os.makedirs(training_data_path, exist_ok=True)
-
+clock = pygame.time.Clock()
+desired_fps = 30
 frame_count = 0
 saved_frame_count = 0
-clock = pygame.time.Clock()
-desired_fps = 30  # For example, 30 FPS
+training_data_path = './frames/test_11/'
+
+if not os.path.exists(training_data_path):
+    os.makedirs(training_data_path)
 
 # Game loop
 while game_running:
-    ms_elapsed = clock.tick(desired_fps)
-    actual_fps = 1000.0 / ms_elapsed if ms_elapsed > 0 else 0
-    print(f"Actual FPS: {actual_fps}")
+    # Cap the frame rate
+    clock.tick(desired_fps)
 
-    # Handle events
+    # Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             game_running = False
 
-    # Move paddles automatically
-    paddle_1_y = (ball_y - paddle_height // 2)
-    paddle_2_y = (ball_y - paddle_height // 2)
+    # Paddle movement
+    keys = pygame.key.get_pressed()
+    # Player 1 controls
+    if keys[pygame.K_w] and paddle_1_y > 0:
+        paddle_1_y -= paddle_speed
+    if keys[pygame.K_s] and paddle_1_y < game_height - paddle_height:
+        paddle_1_y += paddle_speed
+    # Player 2 controls
+    if keys[pygame.K_UP] and paddle_2_y > 0:
+        paddle_2_y -= paddle_speed
+    if keys[pygame.K_DOWN] and paddle_2_y < game_height - paddle_height:
+        paddle_2_y += paddle_speed
 
-    # Move ball
+    # Game logic
     ball_x += ball_speed_x
     ball_y += ball_speed_y
 
-    # Check for collisions with walls
-    if ball_y <= ball_radius or ball_y >= window_height - ball_radius:
+    # Wall collisions (top and bottom)
+    if ball_y - ball_radius <= 0:
+        ball_y = ball_radius  # Adjust ball position to just inside the play area
+        ball_speed_y *= -1
+    elif ball_y + ball_radius >= game_height:
+        # Adjust ball position to just inside the play area
+        ball_y = game_height - ball_radius
         ball_speed_y *= -1
 
-    # Check for collisions with paddles
-    if ball_x <= paddle_1_x + paddle_width and paddle_1_y <= ball_y <= paddle_1_y + paddle_height:
-        ball_speed_x *= -1
-    if ball_x >= paddle_2_x - ball_radius and paddle_2_y <= ball_y <= paddle_2_y + paddle_height:
-        ball_speed_x *= -1
+    # Paddle 1 Collision
+    # Check for collision only if the ball is moving towards the paddle
+    if ball_speed_x < 0 and paddle_1_x <= ball_x - ball_radius <= paddle_1_x + paddle_width:
+        # Now check if it aligns vertically with the paddle
+        if paddle_1_y - ball_radius <= ball_y <= paddle_1_y + paddle_height + ball_radius:
+            ball_speed_x *= -1  # Reflect the ball's horizontal direction
+            # Adjust the ball's x position to prevent sticking or overlapping
+            ball_x = paddle_1_x + paddle_width + ball_radius
 
-    # Clear the window
-    window.fill(BLACK)
+    # Paddle 2 Collision
+    # Similar logic for paddle 2, checking the ball is moving towards the paddle
+    if ball_speed_x > 0 and paddle_2_x - paddle_width <= ball_x + ball_radius <= paddle_2_x:
+        # Vertical alignment check with paddle 2
+        if paddle_2_y - ball_radius <= ball_y <= paddle_2_y + paddle_height + ball_radius:
+            ball_speed_x *= -1  # Reflect the ball's horizontal direction
+            # Adjust the ball's x position to prevent sticking or overlapping
+            ball_x = paddle_2_x - ball_radius
 
-    # Draw game objects
-    pygame.draw.rect(window, WHITE, (paddle_1_x, paddle_1_y,
-                     paddle_width, paddle_height))
-    pygame.draw.rect(window, WHITE, (paddle_2_x, paddle_2_y,
-                     paddle_width, paddle_height))
-    pygame.draw.circle(window, WHITE, (ball_x, ball_y), ball_radius)
+    # Drawing to the game surface
+    game_surface.fill(WHITE)
+    pygame.draw.rect(game_surface, BLACK, (paddle_1_x,
+                     paddle_1_y, paddle_width, paddle_height))
+    pygame.draw.rect(game_surface, BLACK, (paddle_2_x,
+                     paddle_2_y, paddle_width, paddle_height))
+    pygame.draw.circle(game_surface, BLACK, (ball_x, ball_y), ball_radius)
+
+    # Scale up the game_surface and blit to the window
+    scaled_surface = pygame.transform.scale(
+        game_surface, (window_width, window_height))
+    window.blit(scaled_surface, (0, 0))
 
     # Update the display
     pygame.display.update()
 
     # Record the board as a 32x32 array
-    board = pygame.surfarray.array3d(window)
+    board = pygame.surfarray.array3d(game_surface)
     # print("board", board.shape)
     board = board[:, :, 0:1]
-    # print("board", board.shape)
+    print("board", board.shape)
     # for i in range(32):
     #     print(board[0][i])
     # Convert the RGB array to a binary array
@@ -156,8 +183,9 @@ while game_running:
         unexpected_frame_path = os.path.join(training_data_path, f"unexpected_frame_{saved_frame_count:06d}.npy")
         np.save(unexpected_frame_path, unexpected_frame)
 
-    if saved_frame_count == 100:
+    if saved_frame_count == 1000:
         game_running = False
+
     # print("board", board.shape, board)
     # for i in range(32):
     #     print(board[i])
