@@ -23,8 +23,8 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
 # Initialize game variables for rectangle
-rectangle_width = 6
-rectangle_height = 6
+rectangle_width = 4
+rectangle_height = 7
 ball_speed_x = random.choice([-0.5, 0.5])
 ball_speed_y = random.choice([-0.5, 0.5])
 
@@ -46,7 +46,7 @@ clock = pygame.time.Clock()
 desired_fps = 30
 frame_count = 0
 saved_frame_count = 0
-training_data_path = './frames/test_14_square/'
+training_data_path = './frames/test_15_rect/'
 
 if not os.path.exists(training_data_path):
     os.makedirs(training_data_path)
