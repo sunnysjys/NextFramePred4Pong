@@ -20,6 +20,7 @@ from utils import save_prediction_examples
 
 wandb.login(key="6c50abed010bed29a68a9f73668afa2b371fbe69")
 
+
 def seed_all(seed=42):
     random.seed(seed)
     np.random.seed(seed)
@@ -33,11 +34,12 @@ def log_to_file(logfile, message):
     with open(logfile, "a") as f:
         f.write(message + "\n")
 
-def main(args_mode='train'):
+def main(args_mode='train', freeze_vivit=False):
     # For PyTorch 1.12 or newer with Metal Performance Shaders (MPS) support
     use_mps = torch.backends.mps.is_available()
     use_amp = torch.cuda.is_available()
-    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if use_mps else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available()
+                          else "mps" if use_mps else "cpu")
 
     test_id = 'test_17' # (TODO) specify this for wandb & local checkpoints
     model_save_path = './results/' + test_id + '/'
@@ -86,7 +88,8 @@ def main(args_mode='train'):
         })
 
     # Resume from the last checkpoint if exists
-    checkpoint_path = f'{model_save_path}latest_checkpoint.pth'
+    # checkpoint_path = f'{model_save_path}latest_checkpoint.pth'
+    checkpoint_path = f'{model_save_path}latest_checkpoint_just_circle_finished_training_model_3000_training_examples.pth'
     if os.path.isfile(checkpoint_path):
         checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -111,13 +114,30 @@ def main(args_mode='train'):
     #     log_to_file(f'{model_save_path}training_log.txt',
     #                 f"Test loss: {test_loss:.4f}")
     #     return
-        
-    print("Training the model...")
+
+    if args_mode == 'evaluate':
+        print("Evaluating the model...")
+    else:
+        print("Training the model...")
     print("USE AMP", use_amp)
 
-    # enable optimization 
-    torch.backends.cudnn.benchmark = True
+    wandb.init(project='ViViTPong_test',
+               entity='psych209',
+               name='test_run',
+               config={
+                   "learning_rate": lr,
+                   "epochs": n_epochs,
+                   "batch_size": batch_size,
+                   "image_size": image_size,
+                   "N_input_frames": N_input_frames,
+                   "N_predictions": N_predictions,
+               })
 
+    if freeze_vivit:
+        for param in model.vivit_backbone.parameters():
+            param.requires_grad = False
+
+        print("ViViT backbone frozen")
     try:
         for epoch in range(start_epoch, n_epochs):
             total_loss = 0.0
@@ -126,42 +146,48 @@ def main(args_mode='train'):
             progress_bar = tqdm(enumerate(dataloader), total=len(
                 dataloader), desc=f"Epoch {epoch}")
 
-            scaler = GradScaler()
+            if args_mode == 'evaluate':
+                model.eval()  # Set the model to evaluation mode
+                torch.set_grad_enabled(False)  # Disable gradient computation
+            else:
+                model.train()  # Set the model to training mode
+                torch.set_grad_enabled(True)  # Enable gradient computation
+                scaler = GradScaler()  # Initialize GradScaler for mixed precision training
 
             for i, (inputs, targets) in progress_bar:
-                optimizer.zero_grad()
-                if use_amp:
-                    with autocast():
-                        prediction = model(inputs.to(device))
-                        targets_flattened = targets.reshape(-1,
-                                                            N_predictions, image_size**2).to(device)
-                        loss = loss_fn(prediction, targets_flattened)
-                        scaler.scale(loss).backward()
-                        scaler.unscale_(optimizer)
+                if args_mode != 'evaluate':
+                    optimizer.zero_grad()  # Zero the gradients for training mode
+
+                inputs, targets = inputs.to(device), targets.to(device)
+                prediction = model(inputs)
+                targets_flattened = targets.reshape(-1,
+                                                    N_predictions, image_size**2).to(device)
+                loss = loss_fn(prediction, targets_flattened)
+
+                if args_mode != 'evaluate':
+                    if use_amp:
+                        with autocast():
+                            scaler.scale(loss).backward()
+                            scaler.unscale_(optimizer)
+                            torch.nn.utils.clip_grad_norm_(
+                                model.parameters(), max_norm=1.0)
+                            scaler.step(optimizer)
+                            scaler.update()
+                    else:
+                        loss.backward()
                         torch.nn.utils.clip_grad_norm_(
                             model.parameters(), max_norm=1.0)
-                        scaler.step(optimizer)
-                        scaler.update()
-                else:
-                    prediction = model(inputs.to(device))
-                    targets_flattened = targets.reshape(-1,
-                                                        N_predictions, image_size**2).to(device)
-                    loss = loss_fn(prediction, targets_flattened)
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), max_norm=1.0)
-                    optimizer.step()
+                        optimizer.step()
 
                 total_loss += loss.item()
-
                 progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
 
-                # if args_mode == 'evaluate':
-                #     save_prediction_examples(model_save_path, epoch, i, inputs.cpu(
-                #     ), prediction.cpu(), targets.cpu(), image_size, N_predictions, N_input_frames)
-                if np.random.rand() < 0.05:
+                # Condition for saving prediction examples, adjusts for both training and evaluate modes
+                save_condition = args_mode == 'evaluate' or np.random.rand() < 0.05
+                if save_condition:
                     save_prediction_examples(model_save_path, epoch, i, inputs.cpu(
                     ), prediction.cpu(), targets.cpu(), image_size, N_predictions, N_input_frames)
+
             avg_loss = total_loss / len(dataloader)
             epoch_duration = (datetime.now() - epoch_start).total_seconds()
             log_to_file(f'{model_save_path}training_log.txt',
@@ -206,6 +232,9 @@ def main(args_mode='train'):
                 artifact.add_file(checkpoint_path)
                 wandb.log_artifact(artifact)
 
+            # Re-enable gradient computation outside the loop for safety
+            torch.set_grad_enabled(True)
+
         log_to_file(f'{model_save_path}training_log.txt',
                     "Training completed.")
     except Exception as e:
@@ -216,8 +245,16 @@ def main(args_mode='train'):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Train or Evaluate ViViT model')
-    parser.add_argument('--evaluate', default='train', action='store_true',
-                        help='Mode to run the program in: train or evaluate')
+    parser.add_argument('--evaluate', action='store_true',
+                        help='If set, the program runs in evaluate mode. Otherwise, it runs in train mode.')
+    parser.add_argument('--freeze_vivit', action='store_true',
+                        help='If set, the ViViT model will be frozen during training or evaluation.')
     args = parser.parse_args()
-    print("args.evaluate", args.evaluate)
-    main('evaluate' if args.evaluate else 'train')
+
+    mode = 'evaluate' if args.evaluate else 'train'
+    freeze_vivit = args.freeze_vivit
+
+    print(f"args.evaluate: {args.evaluate}")
+    print(f"args.freeze_vivit: {args.freeze_vivit}")
+
+    main(mode, freeze_vivit)

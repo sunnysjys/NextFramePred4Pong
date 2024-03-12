@@ -184,6 +184,7 @@ class ViViT_modified(nn.Module):
         self.in_channels = 1  # number of colors
         # This should be the length of the embedding that is fed into the diffusion model
         self.length_of_embedding = 1024  # TODO: Doesn't need to be 1024, can be anything as long as we are converting the output of CLS token into the size of the hidden size of the diffusion model using a linear layer
+        self.freeze_vivit = False
 
         self.vivit_backbone = ViViTBackbone(
             self.num_input_frames, self.img_size, self.patch_size, self.in_channels)
