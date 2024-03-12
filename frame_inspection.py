@@ -4,12 +4,14 @@ import numpy as np
 from torch.utils.data import DataLoader, ConcatDataset
 
 
+
 def visualize_batch_from_dataloader(dataloader):
     # Fetch a single batch of data
     for b_input_frames, b_target_frames in dataloader:
         print("b_input_frames.shape", b_input_frames.shape)
         for i in range(b_input_frames.shape[0]):
-            input_frames, target_frames = b_input_frames[i, :, :, :, :], b_target_frames[i, :, :, :, :]
+            input_frames, target_frames = b_input_frames[i,
+                                                         :, :, :, :], b_target_frames[i, :, :, :, :]
             print("input_frames.shape", input_frames.shape)
             # Determine the number of rows and columns for the subplot
             num_rows = 2  # Input, Expected
@@ -35,9 +37,10 @@ def visualize_batch_from_dataloader(dataloader):
             plt.show()
         break
 
+
 if __name__ == "__main__":
-    dir_path_square = './frames/test_14_square/'
-    dir_path_circle = './frames/test_12/'
+    dir_path_1 = './frames/test_15_rect/'
+    dir_path_2 = './frames/test_16_ellipse/'
     image_size = 32
     batch_size = 8
     N_predictions = 4
