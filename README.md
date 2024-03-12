@@ -29,3 +29,17 @@ This command creates a new Conda environment named psych209 based on the specifi
 `conda env update --file environment.yml --prune`
 
 The --prune option ensures that any dependencies removed from environment.yml since your last update are also removed from the environment.
+
+## Notes
+### frames
+test_12 contains 2500 frames, in circle
+test_14 contains 2500 frames, in square
+test_15 contains 250 frames, in rectangle
+test_16 contains 250 frames, in ellipse
+
+### results
+test_12 is 'test_run' in wandb on circle
+test_14 is is 'test_14' in wandb, trained on both circle and squre
+
+### results/test_14/test_predictions
+epoch 299 are WRONG, generated from eval on rotated shapes. 

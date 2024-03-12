@@ -1,9 +1,7 @@
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from torchvision import transforms
 # from dataset import PongVideoDataset
-from dataset_2 import PongDataset
-from model_just_transformer import NaViT_modified, ViViT_modified
 # from DiT.diffusion import create_diffusion
 from datetime import datetime
 import numpy as np
@@ -14,6 +12,13 @@ from tqdm import tqdm
 import argparse
 from torch.cuda.amp import GradScaler, autocast
 import wandb
+
+from dataset_2 import PongDataset
+from model_just_transformer import ViViT_modified
+from eval import evaluate_model
+from utils import save_prediction_examples
+
+wandb.login(key="6c50abed010bed29a68a9f73668afa2b371fbe69")
 
 def seed_all(seed=42):
     random.seed(seed)
@@ -28,66 +33,19 @@ def log_to_file(logfile, message):
     with open(logfile, "a") as f:
         f.write(message + "\n")
 
-
-def save_prediction_examples(model_save_path, epoch, example_number, inputs, predictions, targets, image_size, N_predictions, N_input_frames, examples_to_save=5):
-    test_predictions_path = os.path.join(model_save_path, 'test_predictions')
-    os.makedirs(test_predictions_path, exist_ok=True)
-
-    inputs = inputs.reshape(-1, N_input_frames, image_size, image_size)
-    predictions = predictions.reshape(-1,
-                                      N_predictions, image_size, image_size)
-    targets = targets.reshape(-1, N_predictions, image_size, image_size)
-
-    for i in range(min(examples_to_save, predictions.size(0))):
-        # Create a subplot grid with 3 rows (inputs, actual, prediction) and max(N_predictions, 2) columns
-        num_columns = max(N_input_frames, N_predictions, 2)
-        fig, axs = plt.subplots(3, num_columns, figsize=(
-            num_columns * 3, 9))  # Adjust figure size as needed
-
-        for n in range(num_columns):
-            # Display input images on the first row
-            if n < N_input_frames:  # Display the two input images
-                ax_input = axs[0, n]
-                ax_input.imshow(
-                    inputs[i, n].detach().cpu().numpy(), cmap='gray')
-                ax_input.set_title(f'Input {n+1}')
-                ax_input.axis('off')
-            else:  # No input for these columns, hide the axis
-                axs[0, n].axis('off')
-
-            # Display actual targets on the second row if within range
-            if n < N_predictions:
-                ax_actual = axs[1, n]
-                ax_actual.imshow(
-                    targets[i, n].detach().cpu().numpy(), cmap='gray')
-                ax_actual.set_title(f'Actual {n+1}')
-                ax_actual.axis('off')
-
-            # Display predictions on the third row if within range
-            if n < N_predictions:
-                ax_pred = axs[2, n]
-                ax_pred.imshow(
-                    predictions[i, n].detach().cpu().numpy(), cmap='gray')
-                ax_pred.set_title(f'Prediction {n+1}')
-                ax_pred.axis('off')
-
-        plt.tight_layout()
-        plt.savefig(
-            f'{test_predictions_path}/epoch_{epoch}_batch_{example_number}_example_{i}.png')
-        plt.close()
-
-
 def main(args_mode='train'):
     # For PyTorch 1.12 or newer with Metal Performance Shaders (MPS) support
     use_mps = torch.backends.mps.is_available()
     use_amp = torch.cuda.is_available()
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if use_mps else "cpu")
 
-    model_save_path = './results/test_7/'
+    test_id = 'test_17' # (TODO) specify this for wandb & local checkpoints
+    model_save_path = './results/' + test_id + '/'
     os.makedirs(model_save_path, exist_ok=True)  # Ensure the directory exists
-    training_data_path = './frames/test_7/'
+    training_square_path = './frames/test_14_square/'
+    training_circle_path = './frames/test_12/'
     image_size = 32
-    batch_size = 8
+    batch_size = 32 # (TODO)
     N_input_frames = 4
     N_predictions = 4
     lr = 1e-4
@@ -96,18 +54,36 @@ def main(args_mode='train'):
     log_to_file(f'{model_save_path}training_log.txt',
                 f"{datetime.now()}: seed set to {seed}")
 
-    dataset = PongDataset(training_data_path, image_size, N_predictions=N_predictions,
+    dataset_s = PongDataset(training_square_path, image_size, N_predictions=N_predictions,
                           N_input_frames=N_input_frames, channel_first=True)
+    dataset_c = PongDataset(training_circle_path, image_size, N_predictions=N_predictions,
+                          N_input_frames=N_input_frames, channel_first=True)
+    dataset = ConcatDataset([dataset_s, dataset_c])
     dataloader = DataLoader(dataset, batch_size=batch_size,
-                            shuffle=False, num_workers=4)
+                            shuffle=True, num_workers=16, pin_memory=True)
 
     model = ViViT_modified(N_predictions=N_predictions).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0)
-    loss_fn = torch.nn.BCELoss()
+    loss_fn = torch.nn.BCEWithLogitsLoss()
 
     start_epoch = 0
-    n_epochs = 200
+    n_epochs = 300
 
+    wandb.init(project='ViViTPong_test', 
+            entity='psych209',
+            name=test_id,
+            id=test_id, # for resuming later 
+            resume=True,
+            config={
+            "learning_rate": lr,
+            "epochs": n_epochs,
+            "batch_size": batch_size,
+            "image_size": image_size,
+            "N_input_frames": N_input_frames,
+            "N_predictions": N_predictions,
+            "dataset": "copy of test 14", # (TODO) specify metadata to log on wandb
+            "test_id": test_id
+        })
 
     # Resume from the last checkpoint if exists
     checkpoint_path = f'{model_save_path}latest_checkpoint.pth'
@@ -118,6 +94,13 @@ def main(args_mode='train'):
         start_epoch = checkpoint['epoch'] + 1
         log_to_file(f'{model_save_path}training_log.txt',
                     f"Resumed from epoch {start_epoch}")
+    if wandb.run.resumed and os.path.isfile(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        log_to_file(f'{model_save_path}training_log.txt',
+                f"Resumed from epoch {start_epoch}")
 
     # print("this is the mode", args_mode)
     # if args_mode == 'evaluate':
@@ -131,19 +114,9 @@ def main(args_mode='train'):
         
     print("Training the model...")
     print("USE AMP", use_amp)
-    
-    wandb.init(project='ViViTPong_test', 
-               entity='psych209',
-               name='test_run',
-               config={
-                "learning_rate": lr,
-                "epochs": n_epochs,
-                "batch_size": batch_size,
-                "image_size": image_size,
-                "N_input_frames": N_input_frames,
-                "N_predictions": N_predictions,
-            })
 
+    # enable optimization 
+    torch.backends.cudnn.benchmark = True
 
     try:
         for epoch in range(start_epoch, n_epochs):
@@ -197,17 +170,39 @@ def main(args_mode='train'):
             save_prediction_examples(model_save_path, epoch, 'last_one', inputs.cpu(
             ), prediction.cpu(), targets.cpu(), image_size, N_predictions, N_input_frames=N_input_frames)
 
-            wandb.log({"avg_loss": avg_loss, "epoch": epoch})
+            wandb.log({"train_total_loss": total_loss, "epoch": epoch})
+            wandb.log({"train_avg_loss": avg_loss, "epoch": epoch})
 
-            if epoch % 2 == 0:
+            # Add eval for every epoch
+            val_dataset_s = PongDataset(training_square_path, image_size, N_predictions, N_input_frames = N_input_frames, mode='test', channel_first=True)
+            val_dataset_c = PongDataset(training_circle_path, image_size, N_predictions, N_input_frames = N_input_frames, mode='test', channel_first=True)
+            # print(len(val_dataset))
+            # print(250 - N_input_frames - (N_predictions - 1))
+            val_dataset = ConcatDataset([val_dataset_s, val_dataset_c])
+            assert len(val_dataset) == 2 * (250 - N_input_frames - (N_predictions - 1))
+            val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=16)
+            val_total_loss, val_avg_loss = evaluate_model(model, val_dataloader, device, loss_fn, image_size, N_predictions)
+
+            log_to_file(f'{model_save_path}training_log.txt', f"Epoch {epoch}, Validation Loss: {val_avg_loss:.4f}")
+            wandb.log({"val_total_loss": val_total_loss, "epoch":epoch})
+            wandb.log({"val_avg_loss": val_avg_loss, "epoch":epoch})
+
+            model.train()
+
+            if epoch % 15 == 0:
+                # unique checkoint filename on epoch and time
+                epoch_time_str = datetime.datetime.now().strftime("%m%d-%H%M%S")
+                checkpoint_filename = f"checkpoint_epoch_{epoch}_{epoch_time_str}.pth"
+                checkpoint_path = os.path.join(model_save_path, checkpoint_filename)
+
                 # Save model and optimizer state
                 torch.save({'epoch': epoch, 'model_state_dict': model.state_dict(
                 ), 'optimizer_state_dict': optimizer.state_dict()}, checkpoint_path)
                 log_to_file(f'{model_save_path}training_log.txt',
-                            f"Saved checkpoint at epoch {epoch}")
+                            f"Saved checkpoint at epoch {epoch} at {checkpoint_path}")
                 
                 # log to wandb
-                artifact = wandb.Artifact('model-checkpoints', type='model')
+                artifact = wandb.Artifact(f'model-checkpoints-id-{test_id}-epoch-{epoch}', type='model')
                 artifact.add_file(checkpoint_path)
                 wandb.log_artifact(artifact)
 

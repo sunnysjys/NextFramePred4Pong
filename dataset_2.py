@@ -6,13 +6,15 @@ import torch
 
 
 class PongDataset(Dataset):
-    def __init__(self, directory_path, pixel_size, N_predictions=1, N_input_frames=2, channel_first=False, mode='train', scenario_path=None):
+    def __init__(self, directory_path, pixel_size, N_predictions=1, N_input_frames=2, channel_first=False, rotation=False, frac_rotated=0.5, mode='train', scenario_path=None):
         self.mode = mode
         self.data = []
         self.pixel_size = pixel_size
         self.N_predictions = N_predictions
         self.N_input_frames = N_input_frames
         self.channel_first = channel_first
+        self.rotation = rotation
+        self.frac_rotated = frac_rotated
         self.transform = transforms.ToTensor()
         # List all .npy files in the directory and load them
         if self.mode == 'train' or self.mode == 'test':
@@ -80,6 +82,7 @@ class PongDataset(Dataset):
     def load_data(self, directory_path):
         file_names = os.listdir(directory_path)
         file_names = sorted([f for f in file_names if f.endswith('.npy') and f.startswith('frame')])
+        loaded_data = []
         print("file_names:", file_names)
         for file_name in file_names:
             file_path = os.path.join(directory_path, file_name)
@@ -89,14 +92,28 @@ class PongDataset(Dataset):
             # Check if value is between 0 and 1
             if np.max(cur_data) > 1:
                 cur_data = cur_data / 255
-
             # Ensure data shape matches expectations
             if cur_data.shape == (self.pixel_size, self.pixel_size, 1):
-                self.data.append(cur_data)
-
+                loaded_data.append(cur_data)
         # Stack the loaded data along a new axis to maintain individual frames
-        self.data = np.stack(self.data, axis=0)
-        self.transform = transforms.ToTensor()
+        loaded_data = np.stack(loaded_data, axis=0)
+
+        # Split the data based on the mode
+        if self.mode == 'train':
+            self.data = loaded_data[:2250] 
+            assert len(self.data) == 2250
+            if self.rotation == True:
+                # rotate the fraction specified
+                num_rotated = int(len(self.data) * self.frac_rotated)
+                self.data[:num_rotated] = np.rot90(self.data[:num_rotated], 1, axes=(1, 2))
+
+        elif self.mode == 'test':
+            self.data = loaded_data[-250:]
+            if self.rotation == True:
+                # rotate the fraction specified
+                num_rotated = int(len(loaded_data) * self.frac_rotated)
+                self.data[:num_rotated] = np.rot90(self.data[:num_rotated], 1, axes=(1, 2))
+
 
     def __len__(self):
         # With each sequence being 2 + N.predictions frames long, the number of sequences is `number of frames - 2`
