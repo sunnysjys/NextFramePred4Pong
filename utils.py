@@ -26,6 +26,10 @@ def save_prediction_examples(model_save_path, epoch, example_number, inputs, pre
                     axs[row, n].set_title(['Input', 'Actual', 'Prediction'][row] + f' {n+1}')
                     axs[row, n].axis('off')
 
+                    # Add a box around each visualization
+                    rect = patches.Rectangle((-0.5, -0.5), image_size, image_size, linewidth=1, edgecolor='black', facecolor='none')
+                    axs[row, n].add_patch(rect)
+
                     # Check for valid contour information before attempting to draw
                     # print('contours_predictions', contours_predictions[i])
                     # print('n', n, 'len(contours_predictions[i])', len(contours_predictions[i]))
@@ -44,14 +48,11 @@ def save_prediction_examples(model_save_path, epoch, example_number, inputs, pre
         plt.savefig(f'{test_predictions_path}epoch_{epoch}_batch_{example_number}_example_{i}.png')
         plt.close()
 
-
-
 def log_to_file(logfile, message):
     os.makedirs(os.path.dirname(logfile), exist_ok=True)
     print("logging to ", logfile)
     with open(logfile, "a") as f:
         f.write(message + "\n")
-
 
 def calculate_euclidean_distance(p1, p2):
     return np.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
